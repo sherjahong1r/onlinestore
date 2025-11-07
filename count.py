@@ -1,7 +1,7 @@
 """
 Created on Mon Nov  3 06:15:00 2025
 Daromat va Zararni hisoblaymiz
-@author: Owner
+@author: Sherjahongir
 """
             
             
@@ -48,4 +48,5 @@ while True:
             
             
             
+
 
