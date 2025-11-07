@@ -43,8 +43,9 @@ while True:
         break
 
     else:
-        print("Nimadir noto‘g‘ri! Qaytadan urinib ko‘ring.")
+        print("Qaytadan urinib ko‘ring.")
 
             
             
             
+
