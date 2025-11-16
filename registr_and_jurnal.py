@@ -121,8 +121,7 @@ else:
      kirish = input("Qayta kiriting (1/2): ")
      
 
-# Endi buning hatosi chiqqanda try except bilan tekshiraman baholashni.
-
     
+
 
 
