@@ -12,8 +12,10 @@ import os
 # Bu maxsus buyruq bo'lib, modelni faqat bir marta yuklaydi. Sahifa har yangilanganda modelni qayta o'qib vaqt sarflamaslik uchun kerak.
 def load_assets():
     base_path = os.path.dirname(__file__)  # Bu kod, joriy fayl (churn_app.py) joylashgan katalogni aniqlaydi. Bu, model va scaler fayllarining to'g'ri joylashganligini ta'minlash uchun kerak.
-    model = joblib.load(os.path.join(base_path, 'churn_model.pkl')) # 'churn_model.pkl' faylini yuklaydi. Bu fayl, avval o'qitilgan va saqlangan AI modelini o'z ichiga oladi.
-    scaler = joblib.load(os.path.join(base_path, 'scaler.pkl')) # 'scaler.pkl' faylini yuklaydi. Bu fayl, modelga kiritiladigan ma'lumotlarni o'lchamini moslashtirish uchun ishlatiladigan o'lchov vositasini o'z ichiga oladi.
+    # model = joblib.load(os.path.join(base_path, 'churn_model.pkl')) # 'churn_model.pkl' faylini yuklaydi. Bu fayl, avval o'qitilgan va saqlangan AI modelini o'z ichiga oladi.
+    # scaler = joblib.load(os.path.join(base_path, 'scaler.pkl')) # 'scaler.pkl' faylini yuklaydi. Bu fayl, modelga kiritiladigan ma'lumotlarni o'lchamini moslashtirish uchun ishlatiladigan o'lchov vositasini o'z ichiga oladi.
+    model = joblib.load('01_Churn_wep_app/churn_model.pkl')
+    scaler = joblib.load('01_Churn_wep_app/scaler.pkl')
     return model, scaler # Yuklangan model va scaler obyektlarini qaytaradi.
 
 model, scaler = load_assets() # Yuklangan model va scaler obyektlarini o'zgaruvchilarga saqlaydi, shunda ular keyinchalik tahlil qilish jarayonida ishlatiladi.
@@ -102,4 +104,5 @@ if st.button("Tahlil qilish"):
 # Ishga tushirish uchun terminalda quyidagi buyruqlarni bajarish kerak:
 
 # cd churn_wep_app
+
 # C:\Users\Owner\AppData\Local\Programs\Python\Python313\python.exe -m streamlit run churn_app.py
