@@ -1,0 +1,138 @@
+import os
+import time
+from typing import Annotated, TypedDict # TypedDict: Bu Pythonning typing modulidan olingan, bu ma'lumot tuzilmasining aniq shaklini belgilash uchun ishlatiladi. AgentState nomli TypedDict yaratildi, bu agentning holatini ifodalaydi va unda messages, sql_query, db_result, va source kabi maydonlar mavjud.
+from dotenv import load_dotenv
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage # LangChain kutubxonasidan turli xil xabar turlarini import qilamiz. AIMessage, HumanMessage, va SystemMessage agentning muloqotida turli rollarni ifodalaydi.
+from langgraph.graph import StateGraph, START, END # LangGraph kutubxonasidan StateGraph, START, va END ni import qilamiz. StateGraph agentning ish jarayonini grafik shaklida ifodalash uchun ishlatiladi, START va END esa grafning boshlanishi va tugashini belgilaydi.
+from langgraph.graph.message import add_messages # add_messages: Bu LangGraph kutubxonasidan import qilingan dekorator bo'lib, agentning holatiga xabarlar qo'shish uchun ishlatiladi. AgentState TypedDict ichida messages maydonini yangilash uchun ishlatiladi, bu agentning muloqot tarixini saqlashga yordam beradi.
+from langchain_groq import ChatGroq # ChatGroq: Bu LangChain kutubxonasidan import qilingan sinf bo'lib, Groq API bilan ishlash uchun mo'ljallangan. Agent bu sinfni o'zining LLM (Language Model) sifatida ishlatadi, bu esa agentga tabiiy tilni tushunish va javob berish imkonini beradi.
+from database import get_db_schema, execute_sql # database.py faylidan get_db_schema va execute_sql funksiyalarini import qilamiz. get_db_schema bazadagi jadvallar va ularning ustunlarini "o‘qib" oladi, execute_sql esa agent tuzib bergan SQL so‘rovni bazada bajaradi va natijani olib qaytaradi.
+
+load_dotenv()
+llm = ChatGroq(groq_api_key=os.getenv("GROQ_API_KEY"), model_name="llama-3.3-70b-versatile") 
+
+class AgentState(TypedDict):
+    messages: Annotated[list, add_messages]
+    sql_query: str
+    db_result: str
+    source: str
+    table_used: str  # <--- Buni qo'shing
+
+# router_node: "Miya"ning kirish qismi. Foydalanuvchining savoliga qarab,
+# bu savol bazaga tegishlimi (SQL) yoki oddiy savolmi (LLM) ekanligini hal qiladi.
+def router_node(state: AgentState):
+    question = state["messages"][-1].content # state["messages"][-1].content: Bu agentning holatidagi messages ro'yxatining oxirgi elementini oladi, bu esa foydalanuvchining eng so'nggi savolidir. Agent har safar yangi savolga javob berishda yoki SQL so'rovini bajarishda, bu xabarlar agentning muloqot tarixida saqlanadi. Router_node bu savolни tahlil qilib, uning manbasini aniqlaydi (SQL yoki LLM) va keyingi nodlarga bu ma'lumotни uzatadi.
+    # LLM ga savolни tahlil qilishни buyuramiz
+    prompt = f"Savol: {question}. Bu savol bazadan ma'lumot olishни talab qiladimi? Javobни faqat 'SQL' yoki 'LLM' deb qaytaring."
+    decision = llm.invoke([HumanMessage(content=prompt)]).content.strip()
+    return {"source": decision}
+
+
+# state: Bu funksiya ishlatilganda unga uzatiladigan asosiy ma’lumotlar to‘plami. U agentning "xotirasi" hisoblanadi (savollar tarixi, SQL so‘rovlar, bazadan olingan javoblar va h.k.).
+# : AgentState: Bu Type Hint (tur ko‘rsatgichi). U Python'ga state o‘zgaruvchisi AgentState turidagi ma’lumot bo‘lishi kerakligini bildiradi. Bu kodни o‘qishни osonlashtiradi va xatolarnи kamaytiradi.
+def sql_generator_node(state: AgentState):
+    if state.get("source") != "SQL": return {"sql_query": "", "table_used": "N/A"}
+    
+    question = state["messages"][-1].content
+    db_schema = get_db_schema()
+    
+    # LLM ga jadval nomini ham aniqlab berishni buyuramiz
+    system_prompt = f"""
+    Siz PostgreSQL mutaxassisiz. Baza sxemasi: {db_schema}.
+    Savolga mos SQL so'rovini yozing. 
+    Javobingizni quyidagi formatda bering:
+    [JADVAL]: jadval_nomi
+    [SQL]: select ...
+    """
+    
+    messages = [SystemMessage(content=system_prompt), HumanMessage(content=question)]
+    response = llm.invoke(messages).content
+    
+    # [JADVAL] qismini ajratib olamiz
+    table_name = "Noma'lum"
+    if "[JADVAL]:" in response:
+        table_name = response.split("[JADVAL]:")[1].split("[SQL]:")[0].strip()
+    
+    clean_sql = response.split("[SQL]:")[-1].strip().replace("```sql", "").replace("```", "")
+    
+    return {"sql_query": clean_sql, "table_used": table_name}
+
+
+# sql_executor_node: Bu nod sql_generator_node yaratgan so‘rovni bazaga yuboradi va natijani (db_result) olib beradi.
+def sql_executor_node(state: AgentState):
+    if state.get("source") != "SQL": return {}
+    result = execute_sql(state["sql_query"])
+    return {"db_result": str(result)}
+
+# answer_generator_node: Bu eng oxirgi bosqich. Barcha olingan ma’lumotlarni (bazadan kelgan natijani yoki 
+# LLM ning o‘z javobini) jamlaydi, vaqtni o‘lchaydi va siz xohlagan chiroyli formatda javobni shakllantiradi.
+def answer_generator_node(state: AgentState):
+    start_time = time.time() # 1. Vaqtni o'lchashни boshlaymiz
+    
+    # Kontekst va savolни olish
+    question = state["messages"][-1].content
+    db_result = state.get("db_result", "Natija yo'q")
+    history = state["messages"][-6:]
+    
+    # 2. Promptни shakllantirish
+    prompt = f"Tarix: {history}. \nBaza natijasi: {db_result}. \nSavol: {question}. \nJavobни qisqa va tushunarli o'zbek tilida bering."
+    
+    # 3. LLM ga murojaat (answer o'zgaruvchisi shu yerda hosil bo'ladi)
+    answer = llm.invoke([HumanMessage(content=prompt)]).content
+    
+    # 4. Vaqtni hisoblash (duration o'zgaruvchisi shu yerda hosil bo'ladi)
+    duration = round(time.time() - start_time, 2)
+    
+    # 5. Manbani aniqlash (manba o'zgaruvchisi shu yerda hosil bo'ladi)
+    # Jadval nomini ham qo'shamiz (oldin yozganimizdek)
+    table = state.get("table_used", "Noma'lum")
+    if state.get("source") == "SQL":
+        manba = f"SQL ma'lumotlar bazasi ({table} jadvali)"
+    else:
+        manba = "Llama 3.3 (Groq) sun'iy intellekti"
+    
+    # 6. Oxirida barchasini jamlab final_text ni tuzamiz
+    final_text = f"{answer}\n✅ Manba: {manba}\n⏱ Generatsiya vaqti: {duration} soniya \n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    
+    return {"messages": [AIMessage(content=final_text)]}
+
+
+# workflow, node va edge tushunchalari — bu LangGraph kutubxonasining asosi bo‘lib, 
+# agentingizning "ish tartibi" (workflow)ni belgilab beradi.
+# Grafni qurish
+# node -- ishchi
+# sql uchun savolni uzatadi tayyorlaydi va generatsiya qilingan SQL kodini bazaga yuboradi va natijani olib beradi. Agar savol oddiy savol bo‘lsa, to‘g‘ridan-to‘g‘ri javobni shakllantiradi.
+workflow = StateGraph(AgentState) # StateGraph(AgentState): Bu yangi StateGraph ob'ektini yaratadi, bu agentning ish jarayonini grafik shaklida ifodalash uchun ishlatiladi. AgentState bu grafning har bir nodida uzatiladigan ma'lumot tuzilmasining turini belgilaydi, bu esa agentning "xotirasi" hisoblanadi (savollar tarixi, SQL so‘rovlar, bazadan olingan javoblar va h.k.).
+workflow.add_node("router", router_node) # workflow.add_node("router", router_node): Bu grafga "router" nomli nod qo'shadi, bu nod router_node funksiyasini bajaradi. Router_node foydalanuvchining savoliga qarab, bu savol bazaga tegishlimi (SQL) yoki oddiy savolmi (LLM) ekanligini hal qiladi. Bu nod grafning kirish qismi bo'lib, foydalanuvchining savoli shu nodga uzatiladi va keyingi nodlarga bu ma'lumot asosida harakat qilinadi.
+workflow.add_node("sql_gen", sql_generator_node)
+workflow.add_node("executor", sql_executor_node)
+workflow.add_node("answer", answer_generator_node)
+
+
+# Vazifasi: Bu "ishchilar" o‘rtasidagi bog‘liqlik va ketma-ketlikни ko‘rsatadi. Ya’ni, "A ish tugagach, B ishни boshla" deb buyruq beradi.
+# START -> router -> sql_gen -> executor -> answer -> END zanjiri qurilgan. Agar bu zanjir bo‘lmasa, agent qaysi ishни birinchi qilishни bilmay qoladi.
+# edge -- bu "ishchilar" o‘rtasidagi bog‘liqlik va ketma-ketlikни ko‘rsatadi. 
+workflow.add_edge(START, "router")
+workflow.add_edge("router", "sql_gen")
+workflow.add_edge("sql_gen", "executor")
+workflow.add_edge("executor", "answer")
+workflow.add_edge("answer", END)
+
+graph = workflow.compile()
+
+# if __name__ == "__main__": Bu blok foydalanuvchi bilan terminalda muloqot qilish uchun "interfeys" vazifasini bajaradi.
+if __name__ == "__main__":
+    print("\n\nAGENT ISHGA TUSHDI! (Chiqish uchun 'exit' yozing)")
+    while True:
+        user_input = input("\nSavolingizni kiriting: ")
+        if user_input.lower() == 'exit': break
+        
+        # Streamni faqat "answer" tugunidan keladigan natijani ko'rsatish uchun filtrlash
+        for output in graph.stream({"messages": [HumanMessage(content=user_input)]}): 
+            for key, value in output.items():
+                if key == "answer":
+                    print(f"\nSavolingizga Javob >>>>>: {value['messages'][-1].content}")
+
+
+
+
