@@ -1,0 +1,12 @@
+langchain-core
+langchain-groq
+langgraph
+langgraph-checkpoint-postgres
+psycopg[binary]
+python-dotenv
+sentence-transformers
+fastapi
+uvicorn
+
+
+
