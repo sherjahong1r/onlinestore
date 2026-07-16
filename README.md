@@ -1,206 +1,90 @@
----
-base_model: openai/whisper-medium
-library_name: peft
-tags:
-- base_model:adapter:openai/whisper-medium
-- lora
-- transformers
----
+# Kimyo reaktori — kichik SCADA/PLC/AI/MES/ERP loyihasi
 
-# Model Card for Model ID
+Bu — kimyoviy reaktorni boshqarish uchun to'liq zanjirni ko'rsatuvchi o'quv/demo loyihasi:
 
-<!-- Provide a quick summary of what the model is/does. -->
+```
+Datchik → PLC → SCADA (Flask HMI) → PostgreSQL (Historian) → AI → MES → ERP
+```
 
+## Fayllar tuzilmasi va vazifasi
 
+| Fayl | Vazifasi |
+|---|---|
+| `sensors.py` | 11 ta datchikni simulyatsiya qiladi (harorat, bosim, issiqlik, tezlik, pH, sarf, sath, tebranish, namlik, kuchlanish, tok) |
+| `plc.py` | PLC boshqaruv mantig'i — chegaralarga qarab aktuatorlarni yoqadi/o'chiradi, alarm/trip chiqaradi |
+| `config.py` | Baza ulanish parametrlari va PLC chegaralari |
+| `db/schema.sql` | PostgreSQL jadval sxemasi (6 ta jadval) |
+| `database.py` | PostgreSQL bilan ishlash (yozish/o'qish funksiyalari) |
+| `ai_analysis.py` | Z-score asosida anomaliya aniqlash (AI qatlami) |
+| `mes.py` | Ishlab chiqarish partiyasini kuzatish (MES qatlami) |
+| `erp.py` | Xomashyo/energiya xarajati va foyda hisob-kitobi (ERP qatlami) |
+| `scada_dashboard.py` | Flask asosidagi SCADA HMI veb-server |
+| `templates/dashboard.html` | Brauzerda ko'rinadigan real-vaqt monitoring sahifasi |
+| `main.py` | Barcha qatlamlarni bog'lovchi asosiy sikl |
 
-## Model Details
+## Nima uchun shu texnologiyalar tanlandi
 
-### Model Description
+- **Python** — barcha qatlamni (simulyatsiya, mantiq, AI, veb) bitta tilda yozish imkonini beradi, o'rganish va tez prototip qilish uchun qulay
+- **PostgreSQL** — haqiqiy sanoat SCADA tizimlarida ham eng ko'p ishlatiladigan Historian bazalaridan biri
+- **Flask** — SCADA HMI o'rnini bosuvchi yengil veb-server (haqiqiy loyihada bu o'rinda Ignition/WinCC/AVEVA turadi)
+- **Z-score** — sodda va tez tushuniladigan statistik anomaliya aniqlash usuli (haqiqiy loyihada scikit-learn Isolation Forest yoki LLM-asosidagi tahlil qo'shilishi mumkin)
 
-<!-- Provide a longer summary of what this model is. -->
+## O'rnatish va ishga tushirish
 
+### 1. PostgreSQL o'rnatish (agar bo'lmasa)
 
+```bash
+# Ubuntu/Debian
+sudo apt update
+sudo apt install postgresql postgresql-contrib
 
-- **Developed by:** [More Information Needed]
-- **Funded by [optional]:** [More Information Needed]
-- **Shared by [optional]:** [More Information Needed]
-- **Model type:** [More Information Needed]
-- **Language(s) (NLP):** [More Information Needed]
-- **License:** [More Information Needed]
-- **Finetuned from model [optional]:** [More Information Needed]
+# PostgreSQL xizmatini ishga tushirish
+sudo service postgresql start
 
-### Model Sources [optional]
+# Baza yaratish
+sudo -u postgres createdb chem_scada
+sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'postgres';"
+```
 
-<!-- Provide the basic links for the model. -->
+`config.py` faylida `DB_CONFIG` qiymatlarini o'zingizning PostgreSQL sozlamalaringizga moslang.
 
-- **Repository:** [More Information Needed]
-- **Paper [optional]:** [More Information Needed]
-- **Demo [optional]:** [More Information Needed]
+### 2. Python muhitini tayyorlash
 
-## Uses
+```bash
+python3 -m venv venv
+source venv/bin/activate        # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+```
 
-<!-- Address questions around how the model is intended to be used, including the foreseeable users of the model and those affected by the model. -->
+### 3. Asosiy simulyatsiyani ishga tushirish
 
-### Direct Use
+```bash
+python main.py
+```
 
-<!-- This section is for the model use without fine-tuning or plugging into a larger ecosystem/app. -->
+Bu: datchik → PLC → PostgreSQL → AI → MES → ERP zanjirini ishga tushiradi va terminalda har sikl natijasini chiqaradi.
 
-[More Information Needed]
+### 4. SCADA dashboardni ishga tushirish (alohida terminalda)
 
-### Downstream Use [optional]
+```bash
+python scada_dashboard.py
+```
 
-<!-- This section is for the model use when fine-tuned for a task, or when plugged into a larger ecosystem/app -->
+Brauzerda oching: `http://localhost:5000`
 
-[More Information Needed]
+Real vaqt rejimida barcha 11 ta datchik qiymati va alarmlar ko'rinadi (2 soniyada bir yangilanadi).
 
-### Out-of-Scope Use
+## Keyingi qadamlar (loyihani kengaytirish uchun)
 
-<!-- This section addresses misuse, malicious use, and uses that the model will not work well for. -->
+1. `sensors.py` o'rniga haqiqiy PLC'dan **Modbus TCP** yoki **OPC UA** orqali o'qish (masalan `pymodbus` kutubxonasi bilan)
+2. `plc.py` mantig'ini haqiqiy PLC'ga (Siemens/Allen-Bradley) **Structured Text** sifatida ko'chirish
+3. `ai_analysis.py`ni **scikit-learn Isolation Forest** yoki **LLM-asosidagi operator assistant**ga kengaytirish
+4. Dashboardga **tarixiy grafik** (Chart.js) qo'shish — `/api/trend/<sensor_name>` endpoint allaqachon tayyor
+5. Foydalanuvchi huquqlari (operator/muhandis) va parol bilan himoyalangan sozlamalar ekranini qo'shish
 
-[More Information Needed]
+## Muhim eslatma
 
-## Bias, Risks, and Limitations
-
-<!-- This section is meant to convey both technical and sociotechnical limitations. -->
-
-[More Information Needed]
-
-### Recommendations
-
-<!-- This section is meant to convey recommendations with respect to the bias, risk, and technical limitations. -->
-
-Users (both direct and downstream) should be made aware of the risks, biases and limitations of the model. More information needed for further recommendations.
-
-## How to Get Started with the Model
-
-Use the code below to get started with the model.
-
-[More Information Needed]
-
-## Training Details
-
-### Training Data
-
-<!-- This should link to a Dataset Card, perhaps with a short stub of information on what the training data is all about as well as documentation related to data pre-processing or additional filtering. -->
-
-[More Information Needed]
-
-### Training Procedure
-
-<!-- This relates heavily to the Technical Specifications. Content here should link to that section when it is relevant to the training procedure. -->
-
-#### Preprocessing [optional]
-
-[More Information Needed]
-
-
-#### Training Hyperparameters
-
-- **Training regime:** [More Information Needed] <!--fp32, fp16 mixed precision, bf16 mixed precision, bf16 non-mixed precision, fp16 non-mixed precision, fp8 mixed precision -->
-
-#### Speeds, Sizes, Times [optional]
-
-<!-- This section provides information about throughput, start/end time, checkpoint size if relevant, etc. -->
-
-[More Information Needed]
-
-## Evaluation
-
-<!-- This section describes the evaluation protocols and provides the results. -->
-
-### Testing Data, Factors & Metrics
-
-#### Testing Data
-
-<!-- This should link to a Dataset Card if possible. -->
-
-[More Information Needed]
-
-#### Factors
-
-<!-- These are the things the evaluation is disaggregating by, e.g., subpopulations or domains. -->
-
-[More Information Needed]
-
-#### Metrics
-
-<!-- These are the evaluation metrics being used, ideally with a description of why. -->
-
-[More Information Needed]
-
-### Results
-
-[More Information Needed]
-
-#### Summary
-
-
-
-## Model Examination [optional]
-
-<!-- Relevant interpretability work for the model goes here -->
-
-[More Information Needed]
-
-## Environmental Impact
-
-<!-- Total emissions (in grams of CO2eq) and additional considerations, such as electricity usage, go here. Edit the suggested text below accordingly -->
-
-Carbon emissions can be estimated using the [Machine Learning Impact calculator](https://mlco2.github.io/impact#compute) presented in [Lacoste et al. (2019)](https://arxiv.org/abs/1910.09700).
-
-- **Hardware Type:** [More Information Needed]
-- **Hours used:** [More Information Needed]
-- **Cloud Provider:** [More Information Needed]
-- **Compute Region:** [More Information Needed]
-- **Carbon Emitted:** [More Information Needed]
-
-## Technical Specifications [optional]
-
-### Model Architecture and Objective
-
-[More Information Needed]
-
-### Compute Infrastructure
-
-[More Information Needed]
-
-#### Hardware
-
-[More Information Needed]
-
-#### Software
-
-[More Information Needed]
-
-## Citation [optional]
-
-<!-- If there is a paper or blog post introducing the model, the APA and Bibtex information for that should go in this section. -->
-
-**BibTeX:**
-
-[More Information Needed]
-
-**APA:**
-
-[More Information Needed]
-
-## Glossary [optional]
-
-<!-- If relevant, include terms and calculations in this section that can help readers understand the model or model card. -->
-
-[More Information Needed]
-
-## More Information [optional]
-
-[More Information Needed]
-
-## Model Card Authors [optional]
-
-[More Information Needed]
-
-## Model Card Contact
-
-[More Information Needed]
-### Framework versions
-
-- PEFT 0.19.1
+Bu — **o'quv/demo** loyihasi. Haqiqiy sanoat obyektida ishga tushirishdan oldin:
+- PLC mustaqil (SCADA'siz ham) ishlashi kerak — xavfsizlik uchun kritik
+- Litsenziyalangan muhandis tomonidan HAZOP/LOPA tahlili o'tkazilishi shart
+- Alohida xavfsizlik tizimi (SIS) kerak bo'lishi mumkin
